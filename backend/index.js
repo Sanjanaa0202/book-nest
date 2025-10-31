@@ -1,10 +1,11 @@
 const express = require('express')
 const cors = require('cors')
+const paymentRoutes = require('./routes/payment'); 
 const bcrypt = require('bcryptjs')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const app = express()
-const port = process.env.PORT || 6060
+const port = 6060
 
 // app.use(cors())
 app.use(express.json())
@@ -13,6 +14,8 @@ app.use(cors({
   origin: 'http://localhost:3000', // Replace with your React app's URL
   credentials: true
 }));
+
+app.use('/api/payment', paymentRoutes);
 
 app.get('/test', (req, res) => {
   res.json({ message: 'Server is working!' });

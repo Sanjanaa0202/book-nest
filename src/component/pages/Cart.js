@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './Cart.css';
+import { loadRazorpay } from 'react-razorpay';
+import logo from '../../images/logo.png'
 import { FaTrash, FaHeart, FaShoppingCart, FaArrowLeft } from 'react-icons/fa';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -12,7 +14,152 @@ const Cart = () => {
     // Load cart from localStorage on component mount
     useEffect(() => {
         loadCart();
+        console.log('REACT_APP_RAZORPAY_KEY_ID:', process.env.REACT_APP_RAZORPAY_KEY_ID);
     }, []);
+
+    const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => {
+        resolve(true);
+      };
+      script.onerror = () => {
+        resolve(false);
+      };
+      document.body.appendChild(script);
+    });
+  };
+
+  // Function to clear cart
+const clearCart = () => {
+    localStorage.removeItem('booknestCart');
+    setCartItems([]);
+};
+
+    const handleProceedToCheckout = async () => {
+        if (cartItems.length === 0) {
+            alert('Your cart is empty. Please add books to proceed to checkout.');
+            return;
+        }
+    try {
+        console.log('Starting checkout process...');
+      // Calculate total amount from cart items
+      const totalBreakdown = calculateTotals();
+    const totalAmount = Number(totalBreakdown.numericTotal); // Convert back to number
+
+    console.log('Total amount calculated:', totalAmount, typeof totalAmount);
+
+      if (!totalAmount || isNaN(totalAmount) || totalAmount <= 0) {
+      throw new Error('Invalid total amount');
+    }
+
+      // Create order on your backend
+      const response = await fetch('http://localhost:6060/api/payment/create-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: totalAmount,
+          receipt: `receipt_${Date.now()}`,
+        }),
+      });
+
+      console.log('Response status:', response.status);
+
+      if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Server error response:', errorData);
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.error}`);
+    }
+
+      const orderData = await response.json();
+      console.log('Order created:', orderData);
+
+      // Load Razorpay script
+      const isScriptLoaded = await loadRazorpayScript();
+      
+      if (!isScriptLoaded) {
+        throw new Error('Failed to load Razorpay SDK');
+      }
+
+      if (!window.Razorpay) {
+      throw new Error('Razorpay not available');
+    }
+
+    const razorpayKey = 'rzp_test_RIxMC2F1SOOjCj';
+    console.log('Razorpay Key:', razorpayKey); // Debug log to check the key
+
+    if (!razorpayKey || razorpayKey === 'your_razorpay_key_here') {
+  throw new Error('Razorpay key not configured. Please check your .env file');
+}
+
+      const options = {
+        key: razorpayKey, // Add this to your frontend .env
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "BookNest",
+        description: "Book Rental Payment",
+        image: logo,
+        order_id: orderData.id,
+        handler: async function (response) {
+            console.log('Payment response:', response);
+            try {
+          // Verify payment on your backend
+          const verificationResponse = await fetch('http://localhost:6060/api/payment/verify-payment', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              order_id: response.razorpay_order_id,
+              payment_id: response.razorpay_payment_id,
+              signature: response.razorpay_signature,
+            }),
+          });
+
+          const verificationData = await verificationResponse.json();
+          
+          if (verificationData.success) {
+            clearCart();
+            alert('Payment Successful!');
+            navigate('/home')
+            // Redirect to success page or clear cart
+          } else {
+            alert('Payment Verification Failed');
+          }
+        } catch (error) {
+          console.error('Payment verification error:', error);
+          alert('Error verifying payment');
+        }
+      },
+        prefill: {
+          name: "Customer Name", // You can get this from user input
+          email: "customer@example.com", // You can get this from user input
+          contact: "9000090000", // You can get this from user input
+        },
+        // notes: {
+        //   address: "Customer Address", // You can get this from user input
+        // },
+        theme: {
+          color: "#3399cc",
+        },
+        modal: {
+          ondismiss: function() {
+            console.log('Payment modal dismissed');
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+      
+    } catch (error) {
+      console.error('Full error:', error);
+    alert('Error: ' + error.message);
+    }
+  };
 
     // Function to load cart from localStorage
     const loadCart = () => {
@@ -107,7 +254,8 @@ const Cart = () => {
             deliveryFee: deliveryFee.toFixed(2),
             tax: tax.toFixed(2),
             discount: discountAmount.toFixed(2),
-            total: total.toFixed(2)
+            total: total.toFixed(2),
+            numericTotal : total
         };
     };
 
@@ -262,7 +410,7 @@ const Cart = () => {
                             
                             <button 
                                 className="btn btn-outline-primary w-100 checkout-btn"
-                                onClick={handleCheckout}
+                                onClick={handleProceedToCheckout}
                                 disabled={cartItems.length === 0}
                             >
                                 Proceed to Checkout
